@@ -17,6 +17,7 @@ import (
 	"errors"
 	l8common "github.com/saichler/l8common/go/types/l8common"
 	"github.com/saichler/l8types/go/ifs"
+	"reflect"
 	"time"
 )
 
@@ -47,11 +48,12 @@ func ValidateRequiredInt64(value int64, fieldName string) error {
 // ValidateEnum validates an enum value against its name map.
 // Uses the protobuf-generated _name maps (e.g., Gender_name).
 // Value 0 (UNSPECIFIED) is considered invalid.
-func ValidateEnum(value int32, nameMap map[int32]string, enumName string) error {
-	if value == 0 {
+func ValidateEnum(value interface{}, nameMap map[int32]string, enumName string) error {
+	v := int32(reflect.ValueOf(value).Int())
+	if v == 0 {
 		return errors.New(enumName + " must be specified")
 	}
-	if _, ok := nameMap[value]; !ok {
+	if _, ok := nameMap[v]; !ok {
 		return errors.New("invalid " + enumName + " value")
 	}
 	return nil
