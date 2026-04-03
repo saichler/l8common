@@ -19,6 +19,8 @@ import (
 	l8common "github.com/saichler/l8common/go/types/l8common"
 	"github.com/saichler/l8types/go/ifs"
 	l8api "github.com/saichler/l8types/go/types/l8api"
+	"github.com/saichler/l8types/go/types/l8reflect"
+	"reflect"
 )
 
 // VB (Validation Builder) chains validators for a ServiceCallback.
@@ -34,10 +36,39 @@ type VB struct {
 }
 
 // NewValidation creates a validation builder for a ServiceCallback.
-// typeName is a human-readable name for error messages.
-// typeCheck verifies the entity type (e.g., func(v interface{}) bool { _, ok := v.(*MyType); return ok }).
-// setID generates/sets the primary key on a new entity.
-func NewValidation(typeName string, typeCheck func(interface{}) bool, setID SetIDFunc) *VB {
+// typeInstance is a zero-value pointer to the entity type (e.g., &fin.Budget{}).
+// resources provides access to the introspector for deriving typeName, typeCheck, and setID.
+func NewValidation(typeInstance interface{}, resources ifs.IResources) *VB {
+	instanceType := reflect.TypeOf(typeInstance)
+	typeName := instanceType.Elem().Name()
+
+	typeCheck := func(v interface{}) bool {
+		return reflect.TypeOf(v) == instanceType
+	}
+
+	// Derive setID from the introspector's primary key decorator
+	var setID SetIDFunc
+	introspector := resources.Introspector()
+	if introspector != nil {
+		node, ok := introspector.NodeByValue(typeInstance)
+		if ok {
+			fields, err := introspector.Decorators().Fields(node, l8reflect.L8DecoratorType_Primary)
+			if err == nil && len(fields) > 0 {
+				pkFieldName := fields[0]
+				setID = func(v interface{}) {
+					rv := reflect.ValueOf(v).Elem()
+					f := rv.FieldByName(pkFieldName)
+					if f.IsValid() && f.Kind() == reflect.String && f.String() == "" {
+						f.SetString(ifs.NewUuid())
+					}
+				}
+			}
+		}
+	}
+	if setID == nil {
+		setID = func(v interface{}) {} // no-op if introspector unavailable
+	}
+
 	return &VB{typeName: typeName, typeCheck: typeCheck, setID: setID}
 }
 
@@ -123,16 +154,36 @@ func (b *VB) DateRange(getter func(interface{}) *l8common.DateRange, name string
 }
 
 // Compute adds a function that derives/computes entity fields before validation.
-// Chain Compute() before Require() so computed fields can be validated.
-func (b *VB) Compute(fn func(interface{}) error) *VB {
+// fn can be func(interface{}) error OR func(*ConcreteType) error — reflection wraps typed funcs.
+func (b *VB) Compute(fn interface{}) *VB {
+	if typed, ok := fn.(func(interface{}) error); ok {
+		return b.Custom(func(e interface{}, _ ifs.IVNic) error { return typed(e) })
+	}
+	fnVal := reflect.ValueOf(fn)
 	return b.Custom(func(e interface{}, _ ifs.IVNic) error {
-		return fn(e)
+		results := fnVal.Call([]reflect.Value{reflect.ValueOf(e)})
+		if !results[0].IsNil() {
+			return results[0].Interface().(error)
+		}
+		return nil
 	})
 }
 
 // Custom adds a custom validation function.
-func (b *VB) Custom(fn func(interface{}, ifs.IVNic) error) *VB {
-	b.validators = append(b.validators, fn)
+// fn can be func(interface{}, ifs.IVNic) error OR func(*ConcreteType, ifs.IVNic) error.
+func (b *VB) Custom(fn interface{}) *VB {
+	if typed, ok := fn.(func(interface{}, ifs.IVNic) error); ok {
+		b.validators = append(b.validators, typed)
+		return b
+	}
+	fnVal := reflect.ValueOf(fn)
+	b.validators = append(b.validators, func(e interface{}, vnic ifs.IVNic) error {
+		results := fnVal.Call([]reflect.Value{reflect.ValueOf(e), reflect.ValueOf(vnic)})
+		if !results[0].IsNil() {
+			return results[0].Interface().(error)
+		}
+		return nil
+	})
 	return b
 }
 
@@ -143,8 +194,24 @@ func (b *VB) StatusTransition(cfg *StatusTransitionConfig) *VB {
 }
 
 // After adds a function to run after successful persistence (PUT/PATCH only).
-func (b *VB) After(fn ActionValidateFunc) *VB {
-	b.afterActions = append(b.afterActions, fn)
+// fn can be ActionValidateFunc OR func(*ConcreteType, ifs.Action, ifs.IVNic) error.
+func (b *VB) After(fn interface{}) *VB {
+	if typed, ok := fn.(ActionValidateFunc); ok {
+		b.afterActions = append(b.afterActions, typed)
+		return b
+	}
+	if typed, ok := fn.(func(interface{}, ifs.Action, ifs.IVNic) error); ok {
+		b.afterActions = append(b.afterActions, typed)
+		return b
+	}
+	fnVal := reflect.ValueOf(fn)
+	b.afterActions = append(b.afterActions, func(e interface{}, action ifs.Action, vnic ifs.IVNic) error {
+		results := fnVal.Call([]reflect.Value{reflect.ValueOf(e), reflect.ValueOf(action), reflect.ValueOf(vnic)})
+		if !results[0].IsNil() {
+			return results[0].Interface().(error)
+		}
+		return nil
+	})
 	return b
 }
 
