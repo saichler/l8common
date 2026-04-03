@@ -19,7 +19,8 @@ import (
 )
 
 // SumLineMoney sums a Money field across a slice of line items.
-func SumLineMoney[L any](lines []*L, getter func(*L) *l8common.Money) *l8common.Money {
+// The getter extracts a *Money from each item (caller must type-assert inside).
+func SumLineMoney(lines []interface{}, getter func(interface{}) *l8common.Money) *l8common.Money {
 	total := int64(0)
 	currencyId := ""
 	for _, line := range lines {
@@ -65,7 +66,7 @@ func MoneySubtract(a, b *l8common.Money) *l8common.Money {
 }
 
 // SumLineFloat64 sums a float64 field across a slice of line items.
-func SumLineFloat64[L any](lines []*L, getter func(*L) float64) float64 {
+func SumLineFloat64(lines []interface{}, getter func(interface{}) float64) float64 {
 	total := float64(0)
 	for _, line := range lines {
 		total += getter(line)
@@ -74,7 +75,7 @@ func SumLineFloat64[L any](lines []*L, getter func(*L) float64) float64 {
 }
 
 // SumLineInt64 sums an int64 field across a slice of line items.
-func SumLineInt64[L any](lines []*L, getter func(*L) int64) int64 {
+func SumLineInt64(lines []interface{}, getter func(interface{}) int64) int64 {
 	total := int64(0)
 	for _, line := range lines {
 		total += getter(line)

@@ -20,17 +20,12 @@ import (
 	"time"
 )
 
-// SafeCast safely casts an interface{} to a pointer of type T.
-// Returns an error instead of panicking if the element is nil.
-func SafeCast[T any](element interface{}) (*T, error) {
+// SafeCast safely casts an interface{} and returns an error if nil.
+func SafeCast(element interface{}) (interface{}, error) {
 	if element == nil {
 		return nil, errors.New("entity not found")
 	}
-	result, ok := element.(*T)
-	if !ok {
-		return nil, errors.New("unexpected response type")
-	}
-	return result, nil
+	return element, nil
 }
 
 // ValidateRequired checks if a string field is non-empty
@@ -52,11 +47,11 @@ func ValidateRequiredInt64(value int64, fieldName string) error {
 // ValidateEnum validates an enum value against its name map.
 // Uses the protobuf-generated _name maps (e.g., Gender_name).
 // Value 0 (UNSPECIFIED) is considered invalid.
-func ValidateEnum[T ~int32](value T, nameMap map[int32]string, enumName string) error {
+func ValidateEnum(value int32, nameMap map[int32]string, enumName string) error {
 	if value == 0 {
 		return errors.New(enumName + " must be specified")
 	}
-	if _, ok := nameMap[int32(value)]; !ok {
+	if _, ok := nameMap[value]; !ok {
 		return errors.New("invalid " + enumName + " value")
 	}
 	return nil

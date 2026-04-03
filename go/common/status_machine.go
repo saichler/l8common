@@ -21,10 +21,12 @@ import (
 )
 
 // StatusTransitionConfig defines a state machine for an entity's status field.
-type StatusTransitionConfig[T any] struct {
-	StatusGetter  func(*T) int32
-	StatusSetter  func(*T, int32)
-	FilterBuilder func(*T) *T
+// StatusGetter/StatusSetter/FilterBuilder operate on interface{} — the caller
+// type-asserts inside these functions.
+type StatusTransitionConfig struct {
+	StatusGetter  func(interface{}) int32
+	StatusSetter  func(interface{}, int32)
+	FilterBuilder func(interface{}) interface{}
 	ServiceName   string
 	ServiceArea   byte
 	InitialStatus int32
@@ -33,8 +35,8 @@ type StatusTransitionConfig[T any] struct {
 }
 
 // BuildValidator returns an ActionValidateFunc that enforces status transitions.
-func (cfg *StatusTransitionConfig[T]) BuildValidator() ActionValidateFunc[T] {
-	return func(entity *T, action ifs.Action, vnic ifs.IVNic) error {
+func (cfg *StatusTransitionConfig) BuildValidator() ActionValidateFunc {
+	return func(entity interface{}, action ifs.Action, vnic ifs.IVNic) error {
 		if action == ifs.POST {
 			if cfg.InitialStatus > 0 {
 				cfg.StatusSetter(entity, cfg.InitialStatus)
@@ -47,7 +49,7 @@ func (cfg *StatusTransitionConfig[T]) BuildValidator() ActionValidateFunc[T] {
 
 		newStatus := cfg.StatusGetter(entity)
 		filter := cfg.FilterBuilder(entity)
-		old, err := GetEntity[T](cfg.ServiceName, cfg.ServiceArea, filter, vnic)
+		old, err := GetEntity(cfg.ServiceName, cfg.ServiceArea, filter, vnic)
 		if err != nil {
 			return fmt.Errorf("failed to fetch existing entity for status validation: %w", err)
 		}
@@ -75,7 +77,7 @@ func (cfg *StatusTransitionConfig[T]) BuildValidator() ActionValidateFunc[T] {
 	}
 }
 
-func (cfg *StatusTransitionConfig[T]) statusName(val int32) string {
+func (cfg *StatusTransitionConfig) statusName(val int32) string {
 	if n, ok := cfg.StatusNames[val]; ok {
 		return n
 	}

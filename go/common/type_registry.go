@@ -19,7 +19,9 @@ import (
 )
 
 // RegisterType registers a type and its list wrapper with the introspector and registry.
-func RegisterType[T any, TList any](resources ifs.IResources, pkField string) {
-	resources.Introspector().Decorators().AddPrimaryKeyDecorator(new(T), pkField)
-	resources.Registry().Register(new(TList))
+// typeInstance should be a pointer to the entity (e.g., new(MyType)).
+// listInstance should be a pointer to the list wrapper (e.g., new(MyTypeList)).
+func RegisterType(resources ifs.IResources, typeInstance interface{}, listInstance interface{}, pkField string) {
+	resources.Introspector().Decorators().AddPrimaryKeyDecorator(typeInstance, pkField)
+	resources.Registry().Register(listInstance)
 }
