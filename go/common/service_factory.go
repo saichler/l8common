@@ -203,6 +203,31 @@ func PostEntity(serviceName string, serviceArea byte, entity interface{}, vnic i
 	return entity, nil
 }
 
+// GetEntitiesByQuery retrieves multiple entities using an L8Query string.
+// Use this when you need a WHERE clause (e.g., "select * from Alarm where State=1").
+// For simple all-or-filter retrieval, use GetEntities instead.
+// Returns []interface{} — caller must type-assert each element.
+func GetEntitiesByQuery(serviceName string, serviceArea byte, query string, vnic ifs.IVNic) ([]interface{}, error) {
+	handler, ok := ServiceHandler(serviceName, serviceArea, vnic)
+	if ok {
+		elems, err := object.NewQuery(query, vnic.Resources())
+		if err != nil {
+			return nil, err
+		}
+		resp := handler.Get(elems, vnic)
+		if resp.Error() != nil {
+			return nil, resp.Error()
+		}
+		return resp.Elements(), nil
+	}
+	q := &l8api.L8Query{Text: query}
+	resp := vnic.Request("", serviceName, serviceArea, ifs.GET, q, 30)
+	if resp.Error() != nil {
+		return nil, resp.Error()
+	}
+	return resp.Elements(), nil
+}
+
 // EntityExists checks if any entity matching the filter already exists.
 func EntityExists(serviceName string, serviceArea byte, filter interface{}, vnic ifs.IVNic) (bool, error) {
 	existing, err := GetEntities(serviceName, serviceArea, filter, vnic)

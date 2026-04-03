@@ -187,6 +187,29 @@ func (b *VB) Custom(fn interface{}) *VB {
 	return b
 }
 
+// BeforeAction adds an action-aware validator that runs before persistence.
+// Unlike Custom, it receives the CRUD action so it can branch on POST/PUT/etc.
+// fn can be ActionValidateFunc OR func(*ConcreteType, ifs.Action, ifs.IVNic) error.
+func (b *VB) BeforeAction(fn interface{}) *VB {
+	if typed, ok := fn.(ActionValidateFunc); ok {
+		b.actionValidators = append(b.actionValidators, typed)
+		return b
+	}
+	if typed, ok := fn.(func(interface{}, ifs.Action, ifs.IVNic) error); ok {
+		b.actionValidators = append(b.actionValidators, typed)
+		return b
+	}
+	fnVal := reflect.ValueOf(fn)
+	b.actionValidators = append(b.actionValidators, func(e interface{}, action ifs.Action, vnic ifs.IVNic) error {
+		results := fnVal.Call([]reflect.Value{reflect.ValueOf(e), reflect.ValueOf(action), reflect.ValueOf(vnic)})
+		if !results[0].IsNil() {
+			return results[0].Interface().(error)
+		}
+		return nil
+	})
+	return b
+}
+
 // StatusTransition adds a status state-machine validator.
 func (b *VB) StatusTransition(cfg *StatusTransitionConfig) *VB {
 	b.actionValidators = append(b.actionValidators, cfg.BuildValidator())
