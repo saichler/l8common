@@ -37,8 +37,8 @@ type VB struct {
 
 // NewValidation creates a validation builder for a ServiceCallback.
 // typeInstance is a zero-value pointer to the entity type (e.g., &fin.Budget{}).
-// resources provides access to the introspector for deriving typeName, typeCheck, and setID.
-func NewValidation(typeInstance interface{}, resources ifs.IResources) *VB {
+// vnic provides access to the introspector for deriving typeName, typeCheck, and setID.
+func NewValidation(typeInstance interface{}, vnic ifs.IVNic) *VB {
 	instanceType := reflect.TypeOf(typeInstance)
 	typeName := instanceType.Elem().Name()
 
@@ -48,7 +48,7 @@ func NewValidation(typeInstance interface{}, resources ifs.IResources) *VB {
 
 	// Derive setID from the introspector's primary key decorator
 	var setID SetIDFunc
-	introspector := resources.Introspector()
+	introspector := vnic.Resources().Introspector()
 	if introspector != nil {
 		node, ok := introspector.NodeByValue(typeInstance)
 		if ok {
