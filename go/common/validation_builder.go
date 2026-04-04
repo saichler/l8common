@@ -73,26 +73,53 @@ func NewValidation(typeInstance interface{}, vnic ifs.IVNic) *VB {
 }
 
 // Require adds a required string field validation.
-func (b *VB) Require(getter func(interface{}) string, name string) *VB {
+// getter can be func(interface{}) string OR func(*ConcreteType) string.
+func (b *VB) Require(getter interface{}, name string) *VB {
+	if typed, ok := getter.(func(interface{}) string); ok {
+		b.validators = append(b.validators, func(e interface{}, _ ifs.IVNic) error {
+			return ValidateRequired(typed(e), name)
+		})
+		return b
+	}
+	fnVal := reflect.ValueOf(getter)
 	b.validators = append(b.validators, func(e interface{}, _ ifs.IVNic) error {
-		return ValidateRequired(getter(e), name)
+		results := fnVal.Call([]reflect.Value{reflect.ValueOf(e)})
+		return ValidateRequired(results[0].String(), name)
 	})
 	return b
 }
 
 // RequireInt64 adds a required int64 field validation.
-func (b *VB) RequireInt64(getter func(interface{}) int64, name string) *VB {
+// getter can be func(interface{}) int64 OR func(*ConcreteType) int64.
+func (b *VB) RequireInt64(getter interface{}, name string) *VB {
+	if typed, ok := getter.(func(interface{}) int64); ok {
+		b.validators = append(b.validators, func(e interface{}, _ ifs.IVNic) error {
+			return ValidateRequiredInt64(typed(e), name)
+		})
+		return b
+	}
+	fnVal := reflect.ValueOf(getter)
 	b.validators = append(b.validators, func(e interface{}, _ ifs.IVNic) error {
-		return ValidateRequiredInt64(getter(e), name)
+		results := fnVal.Call([]reflect.Value{reflect.ValueOf(e)})
+		return ValidateRequiredInt64(results[0].Int(), name)
 	})
 	return b
 }
 
 // Enum adds an enum field validation using the protobuf _name map.
 // Value 0 (UNSPECIFIED) is rejected; unknown values are rejected.
-func (b *VB) Enum(getter func(interface{}) int32, nameMap map[int32]string, name string) *VB {
+// getter can be func(interface{}) int32 OR func(*ConcreteType) int32 (or any int32-compatible return).
+func (b *VB) Enum(getter interface{}, nameMap map[int32]string, name string) *VB {
+	if typed, ok := getter.(func(interface{}) int32); ok {
+		b.validators = append(b.validators, func(e interface{}, _ ifs.IVNic) error {
+			return ValidateEnum(typed(e), nameMap, name)
+		})
+		return b
+	}
+	fnVal := reflect.ValueOf(getter)
 	b.validators = append(b.validators, func(e interface{}, _ ifs.IVNic) error {
-		return ValidateEnum(getter(e), nameMap, name)
+		results := fnVal.Call([]reflect.Value{reflect.ValueOf(e)})
+		return ValidateEnum(int32(results[0].Int()), nameMap, name)
 	})
 	return b
 }
@@ -126,23 +153,47 @@ func (b *VB) OptionalMoney(getter func(interface{}) *l8common.Money, name string
 }
 
 // DateNotZero adds a required date (non-zero timestamp) validation.
-func (b *VB) DateNotZero(getter func(interface{}) int64, name string) *VB {
+// getter can be func(interface{}) int64 OR func(*ConcreteType) int64.
+func (b *VB) DateNotZero(getter interface{}, name string) *VB {
+	if typed, ok := getter.(func(interface{}) int64); ok {
+		b.validators = append(b.validators, func(e interface{}, _ ifs.IVNic) error {
+			return ValidateDateNotZero(typed(e), name)
+		})
+		return b
+	}
+	fnVal := reflect.ValueOf(getter)
 	b.validators = append(b.validators, func(e interface{}, _ ifs.IVNic) error {
-		return ValidateDateNotZero(getter(e), name)
+		results := fnVal.Call([]reflect.Value{reflect.ValueOf(e)})
+		return ValidateDateNotZero(results[0].Int(), name)
 	})
 	return b
 }
 
 // DateAfter validates that date1 > date2 (skips if either is zero).
-func (b *VB) DateAfter(getter1, getter2 func(interface{}) int64, name1, name2 string) *VB {
+// getter1 and getter2 can each be func(interface{}) int64 OR func(*ConcreteType) int64.
+func (b *VB) DateAfter(getter1, getter2 interface{}, name1, name2 string) *VB {
+	g1 := wrapInt64Getter(getter1)
+	g2 := wrapInt64Getter(getter2)
 	b.validators = append(b.validators, func(e interface{}, _ ifs.IVNic) error {
-		d1, d2 := getter1(e), getter2(e)
+		d1, d2 := g1(e), g2(e)
 		if d1 == 0 || d2 == 0 {
 			return nil
 		}
 		return ValidateDateAfter(d1, d2, name1, name2)
 	})
 	return b
+}
+
+// wrapInt64Getter wraps a typed or untyped int64 getter into func(interface{}) int64.
+func wrapInt64Getter(getter interface{}) func(interface{}) int64 {
+	if typed, ok := getter.(func(interface{}) int64); ok {
+		return typed
+	}
+	fnVal := reflect.ValueOf(getter)
+	return func(e interface{}) int64 {
+		results := fnVal.Call([]reflect.Value{reflect.ValueOf(e)})
+		return results[0].Int()
+	}
 }
 
 // DateRange validates a required *l8common.DateRange field (nil + StartDate < EndDate).
