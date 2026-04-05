@@ -221,17 +221,33 @@ func (b *VB) Compute(fn interface{}) *VB {
 }
 
 // Custom adds a custom validation function.
-// fn can be func(interface{}, ifs.IVNic) error OR func(*ConcreteType, ifs.IVNic) error.
+// fn can be:
+//   - func(interface{}, ifs.IVNic) error
+//   - func(*ConcreteType, ifs.IVNic) error (2 params, reflected)
+//   - func(interface{}) error (1 param, vnic ignored)
+//   - func(*ConcreteType) error (1 param, reflected, vnic ignored)
 func (b *VB) Custom(fn interface{}) *VB {
 	if typed, ok := fn.(func(interface{}, ifs.IVNic) error); ok {
 		b.validators = append(b.validators, typed)
 		return b
 	}
+	if typed, ok := fn.(func(interface{}) error); ok {
+		b.validators = append(b.validators, func(e interface{}, _ ifs.IVNic) error {
+			return typed(e)
+		})
+		return b
+	}
 	fnVal := reflect.ValueOf(fn)
 	fnType := fnVal.Type()
-	fmt.Printf("[VB.Custom] REFLECTION PATH for type %s: fn has %d params, expecting 2. typeName=%s\n", fnType.String(), fnType.NumIn(), b.typeName)
-	for i := 0; i < fnType.NumIn(); i++ {
-		fmt.Printf("[VB.Custom]   param %d: %s\n", i, fnType.In(i).String())
+	if fnType.NumIn() == 1 {
+		b.validators = append(b.validators, func(e interface{}, _ ifs.IVNic) error {
+			results := fnVal.Call([]reflect.Value{reflect.ValueOf(e)})
+			if !results[0].IsNil() {
+				return results[0].Interface().(error)
+			}
+			return nil
+		})
+		return b
 	}
 	b.validators = append(b.validators, func(e interface{}, vnic ifs.IVNic) error {
 		results := fnVal.Call([]reflect.Value{reflect.ValueOf(e), reflect.ValueOf(vnic)})
