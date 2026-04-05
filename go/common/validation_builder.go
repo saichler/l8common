@@ -228,6 +228,11 @@ func (b *VB) Custom(fn interface{}) *VB {
 		return b
 	}
 	fnVal := reflect.ValueOf(fn)
+	fnType := fnVal.Type()
+	fmt.Printf("[VB.Custom] REFLECTION PATH for type %s: fn has %d params, expecting 2. typeName=%s\n", fnType.String(), fnType.NumIn(), b.typeName)
+	for i := 0; i < fnType.NumIn(); i++ {
+		fmt.Printf("[VB.Custom]   param %d: %s\n", i, fnType.In(i).String())
+	}
 	b.validators = append(b.validators, func(e interface{}, vnic ifs.IVNic) error {
 		results := fnVal.Call([]reflect.Value{reflect.ValueOf(e), reflect.ValueOf(vnic)})
 		if !results[0].IsNil() {
