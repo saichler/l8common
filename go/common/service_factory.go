@@ -130,13 +130,13 @@ func GetEntities(serviceName string, serviceArea byte, filter interface{}, vnic 
 		if resp.Error() != nil {
 			return nil, resp.Error()
 		}
-		return resp.Elements(), nil
+		return filterNilElements(resp.Elements()), nil
 	}
 	resp := vnic.Request("", serviceName, serviceArea, ifs.GET, filter, 30)
 	if resp.Error() != nil {
 		return nil, resp.Error()
 	}
-	return resp.Elements(), nil
+	return filterNilElements(resp.Elements()), nil
 }
 
 // getAllEntities fetches all entities using an L8Query when the filter is empty.
@@ -153,13 +153,27 @@ func getAllEntities(serviceName string, serviceArea byte, filter interface{}, vn
 		if resp.Error() != nil {
 			return nil, resp.Error()
 		}
-		return resp.Elements(), nil
+		return filterNilElements(resp.Elements()), nil
 	}
 	resp := vnic.Request("", serviceName, serviceArea, ifs.GET, query, 30)
 	if resp.Error() != nil {
 		return nil, resp.Error()
 	}
-	return resp.Elements(), nil
+	return filterNilElements(resp.Elements()), nil
+}
+
+// filterNilElements removes nil entries from a slice returned by resp.Elements().
+func filterNilElements(elems []interface{}) []interface{} {
+	if elems == nil {
+		return nil
+	}
+	result := make([]interface{}, 0, len(elems))
+	for _, e := range elems {
+		if e != nil {
+			result = append(result, e)
+		}
+	}
+	return result
 }
 
 // PutEntity updates an entity via its service handler.
