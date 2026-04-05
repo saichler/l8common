@@ -45,7 +45,7 @@ func ActivateService(cfg ServiceConfig, serviceItem proto.Message, serviceItemLi
 	}
 	realdb, user, pass, _, err := vnic.Resources().Security().Credential(creds, dbname, vnic.Resources())
 	if err != nil {
-		panic(err)
+		panic("Did not find credentials " + creds + " or db " + dbname + ":" + err.Error())
 	}
 	db := OpenDBConection(realdb, user, pass)
 	p := postgres.NewPostgres(db, vnic.Resources())
