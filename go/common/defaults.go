@@ -36,10 +36,7 @@ var dbInstance *sql.DB
 var dbMtx = &sync.Mutex{}
 
 // CreateResources creates the standard Layer 8 resources with configurable parameters.
-func CreateResources(alias string, logDirectory string, vnetPort uint32) ifs.IResources {
-	if logDirectory != "" {
-		logger.SetLogToFile(logDirectory, alias)
-	}
+func CreateResources(alias string, logVnet bool) ifs.IResources {
 	log := logger.NewLoggerImpl(&logger.FmtLogMethod{})
 	log.SetLogLevel(ifs.Info_Level)
 	res := resources.NewResources(log)
@@ -52,9 +49,16 @@ func CreateResources(alias string, logDirectory string, vnetPort uint32) ifs.IRe
 	}
 
 	res.SysConfig().LocalAlias = alias
-	res.SysConfig().VnetPort = vnetPort
 	res.SysConfig().KeepAliveIntervalSeconds = 30
-	
+
+	if logVnet {
+		res.SysConfig().VnetPort = res.SysConfig().LogConfig.VnetPort
+	}
+
+	if res.SysConfig().LogConfig != nil && res.SysConfig().LogConfig.LogDirectory != "" {
+		logger.SetLogToFile(res.SysConfig().LogConfig.LogDirectory, alias)
+	}
+
 	res.Set(introspecting.NewIntrospect(res.Registry()))
 	res.Set(manager.NewServices(res))
 
