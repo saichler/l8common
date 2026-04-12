@@ -22,7 +22,6 @@ import (
 	"github.com/saichler/l8services/go/services/manager"
 	"github.com/saichler/l8types/go/ifs"
 	"github.com/saichler/l8types/go/sec"
-	"github.com/saichler/l8types/go/types/l8sysconfig"
 	"github.com/saichler/l8utils/go/utils/logger"
 	"github.com/saichler/l8utils/go/utils/registry"
 	"github.com/saichler/l8utils/go/utils/resources"
@@ -48,17 +47,14 @@ func CreateResources(alias string, logDirectory string, vnetPort uint32) ifs.IRe
 	res.Set(registry.NewRegistry())
 
 	sec, _ := sec.LoadSecurityProvider(res)
-	res.Set(sec)
+	if sec != nil {
+		res.Set(sec)
+	}
 
-	conf := &l8sysconfig.L8SysConfig{MaxDataSize: resources.DEFAULT_MAX_DATA_SIZE,
-		RxQueueSize:              resources.DEFAULT_QUEUE_SIZE,
-		TxQueueSize:              resources.DEFAULT_QUEUE_SIZE,
-		LocalAlias:               alias,
-		VnetPort:                 vnetPort,
-		LogsDirectory:            logDirectory,
-		KeepAliveIntervalSeconds: 30}
-	res.Set(conf)
-
+	res.SysConfig().LocalAlias = alias
+	res.SysConfig().VnetPort = vnetPort
+	res.SysConfig().KeepAliveIntervalSeconds = 30
+	
 	res.Set(introspecting.NewIntrospect(res.Registry()))
 	res.Set(manager.NewServices(res))
 
