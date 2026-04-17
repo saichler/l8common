@@ -18,13 +18,21 @@ package common
 import (
 	"database/sql"
 	"fmt"
+	"github.com/saichler/l8bus/go/overlay/health"
+	"github.com/saichler/l8bus/go/overlay/vnic"
+	"github.com/saichler/l8logfusion/go/types/l8logf"
 	"github.com/saichler/l8reflect/go/reflect/introspecting"
+	"github.com/saichler/l8services/go/services/csvexport"
+	"github.com/saichler/l8services/go/services/dataimport"
+	"github.com/saichler/l8services/go/services/filestore"
 	"github.com/saichler/l8services/go/services/manager"
 	"github.com/saichler/l8types/go/ifs"
 	"github.com/saichler/l8types/go/sec"
+	"github.com/saichler/l8utils/go/utils/ipsegment"
 	"github.com/saichler/l8utils/go/utils/logger"
 	"github.com/saichler/l8utils/go/utils/registry"
 	"github.com/saichler/l8utils/go/utils/resources"
+	"github.com/saichler/l8web/go/web/server"
 	"os"
 	"os/signal"
 	"sync"
@@ -85,7 +93,7 @@ func OpenDBConection(dbname, user, pass string) *sql.DB {
 	}
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
-		"127.0.0.1", 5432, user, pass, dbname)
+		ipsegment.MachineIP, 5432, user, pass, dbname)
 	db, err := sql.Open("postgres", psqlInfo)
 
 	if err != nil {
@@ -102,4 +110,64 @@ func OpenDBConection(dbname, user, pass string) *sql.DB {
 
 	dbInstance = db
 	return dbInstance
+}
+
+func CreateWebServer(alias string, registerTypes func(r ifs.IResources)) ifs.IWebServer {
+	nic1, nic2 := createWebVnics(alias, registerTypes)
+	server.UpdateLoginJsonPrefix(nic1.Resources().SysConfig().WebConfig.EndPointPrefix)
+
+	serverConfig := &server.RestServerConfig{
+		Host:           ipsegment.MachineIP,
+		Port:           int(nic1.Resources().SysConfig().WebConfig.WebPort),
+		Authentication: true,
+		CertName:       nic1.Resources().Certs(),
+		Prefix:         nic1.Resources().WebPrefix(),
+	}
+
+	svr, err := server.NewRestServer(serverConfig)
+	if err != nil {
+		panic(err)
+	}
+
+	csvexport.Activate(nic1)
+	filestore.Activate(nic1)
+	dataimport.Activate(nic1)
+
+	hs, ok := nic1.Resources().Services().ServiceHandler(health.ServiceName, 0)
+	if ok {
+		ws := hs.WebService()
+		svr.RegisterWebService(ws, nic1)
+	}
+
+	//Activate the webpoints service
+	sla := ifs.NewServiceLevelAgreement(&server.WebService{}, ifs.WebService, 0, false, nil)
+	if nic2 == nil {
+		sla.SetArgs(svr)
+	} else {
+		sla.SetArgs(svr, nic2)
+	}
+	nic1.Resources().Services().Activate(sla, nic1)
+	nic1.Resources().Logger().Info("Web Server Started!")
+
+	return svr
+}
+
+func createWebVnics(alias string, registerTypes func(r ifs.IResources)) (ifs.IVNic, ifs.IVNic) {
+	nic1 := CreateVnic(alias+"-f", false, registerTypes)
+	var nic2 ifs.IVNic
+	if nic1.Resources().SysConfig().LogConfig != nil && nic1.Resources().SysConfig().LogConfig.LogDirectory != "" {
+		nic2 = CreateVnic(alias+"-t", true, registerTypes)
+	}
+	return nic1, nic2
+}
+
+func CreateVnic(alias string, logs bool, registerTypes func(r ifs.IResources)) ifs.IVNic {
+	res := CreateResources(alias, logs)
+	res.Introspector().Decorators().AddPrimaryKeyDecorator(&l8logf.L8File{}, "Path", "Name")
+	registerTypes(res)
+	nic := vnic.NewVirtualNetworkInterface(res, nil)
+	nic.Resources().SysConfig().KeepAliveIntervalSeconds = 60
+	nic.Start()
+	nic.WaitForConnection()
+	return nic
 }
