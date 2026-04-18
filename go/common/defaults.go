@@ -35,6 +35,7 @@ import (
 	"github.com/saichler/l8web/go/web/server"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -85,15 +86,16 @@ func WaitForSignal(resources ifs.IResources) {
 // OpenDBConection establishes a connection to the PostgreSQL database.
 // It uses localhost (127.0.0.1) on port 5432 with SSL disabled.
 // Panics if the connection cannot be established or ping fails.
-func OpenDBConection(dbname, user, pass string) *sql.DB {
+func OpenDBConection(dbname, user, pass, port string) *sql.DB {
 	dbMtx.Lock()
 	defer dbMtx.Unlock()
 	if dbInstance != nil {
 		return dbInstance
 	}
+	p, _ := strconv.Atoi(port)
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
-		ipsegment.MachineIP, 5432, user, pass, dbname)
+		ipsegment.MachineIP, p, user, pass, dbname)
 	db, err := sql.Open("postgres", psqlInfo)
 
 	if err != nil {
