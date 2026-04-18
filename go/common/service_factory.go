@@ -47,6 +47,7 @@ func ActivateService(cfg ServiceConfig, serviceItem proto.Message, serviceItemLi
 	if err != nil {
 		panic("Did not find credentials " + creds + " or db " + dbname + ":" + err.Error())
 	}
+	fmt.Println("Test ", creds, " ", dbname, " ", user, " ", pass)
 	db := OpenDBConection(dbname, user, pass)
 	p := postgres.NewPostgres(db, vnic.Resources())
 
