@@ -164,7 +164,9 @@ func createWebVnics(alias string, registerTypes func(r ifs.IResources)) (ifs.IVN
 func CreateVnic(alias string, logs bool, registerTypes func(r ifs.IResources)) ifs.IVNic {
 	res := CreateResources(alias, logs)
 	res.Introspector().Decorators().AddPrimaryKeyDecorator(&l8logf.L8File{}, "Path", "Name")
-	registerTypes(res)
+	if registerTypes != nil {
+		registerTypes(res)
+	}
 	nic := vnic.NewVirtualNetworkInterface(res, nil)
 	nic.Resources().SysConfig().KeepAliveIntervalSeconds = 60
 	nic.Start()
