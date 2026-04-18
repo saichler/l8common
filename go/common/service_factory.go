@@ -43,11 +43,11 @@ func ActivateService(cfg ServiceConfig, serviceItem proto.Message, serviceItemLi
 	if cfg.PrimaryKey == "" {
 		panic(fmt.Sprintf("service %s (area %d): PrimaryKey is required", cfg.ServiceName, cfg.ServiceArea))
 	}
-	realdb, user, pass, _, err := vnic.Resources().Security().Credential(creds, dbname, vnic.Resources())
+	_, user, pass, _, err := vnic.Resources().Security().Credential(creds, dbname, vnic.Resources())
 	if err != nil {
 		panic("Did not find credentials " + creds + " or db " + dbname + ":" + err.Error())
 	}
-	db := OpenDBConection(realdb, user, pass)
+	db := OpenDBConection(dbname, user, pass)
 	p := postgres.NewPostgres(db, vnic.Resources())
 
 	sla := ifs.NewServiceLevelAgreement(&persist.OrmService{}, cfg.ServiceName, cfg.ServiceArea, true, cfg.Callback)
