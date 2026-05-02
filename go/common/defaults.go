@@ -118,11 +118,15 @@ func CreateWebServer(alias string, registerTypes func(r ifs.IResources)) ifs.IWe
 	nic1, nic2 := createWebVnics(alias, registerTypes)
 	server.UpdateLoginJsonPrefix(nic1.Resources().SysConfig().WebConfig.EndPointPrefix)
 
+	domain, private, public := nic1.Resources().Certificate()
+
 	serverConfig := &server.RestServerConfig{
 		Host:           ipsegment.MachineIP,
 		Port:           int(nic1.Resources().SysConfig().WebConfig.WebPort),
 		Authentication: true,
-		CertName:       nic1.Resources().Certs(),
+		CertDomain:     domain,
+		CertPrivate:    private,
+		CertPublic:     public,
 		Prefix:         nic1.Resources().WebPrefix(),
 	}
 
