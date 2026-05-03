@@ -129,7 +129,6 @@ func CreateWebServer(alias string, registerTypes func(r ifs.IResources)) ifs.IWe
 		Authentication: true,
 		CertDomain:     domain,
 		CertPrivate:    private,
-		CertPublic:     public,
 		Prefix:         nic1.Resources().WebPrefix(),
 	}
 
