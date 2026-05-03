@@ -119,6 +119,9 @@ func CreateWebServer(alias string, registerTypes func(r ifs.IResources)) ifs.IWe
 	server.UpdateLoginJsonPrefix(nic1.Resources().SysConfig().WebConfig.EndPointPrefix)
 
 	domain, private, public := nic1.Resources().Certificate()
+	if domain == "" && private == "" && public == "" {
+		domain, private, public = sec.CreateCertBundle()
+	}
 
 	serverConfig := &server.RestServerConfig{
 		Host:           ipsegment.MachineIP,
