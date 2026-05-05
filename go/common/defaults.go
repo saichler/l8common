@@ -17,6 +17,7 @@ package common
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"github.com/saichler/l8bus/go/overlay/health"
 	"github.com/saichler/l8bus/go/overlay/vnic"
@@ -118,9 +119,13 @@ func CreateWebServer(alias string, registerTypes func(r ifs.IResources)) ifs.IWe
 	nic1, nic2 := createWebVnics(alias, registerTypes)
 	server.UpdateLoginJsonPrefix(nic1.Resources().SysConfig().WebConfig.EndPointPrefix)
 
-	domain, private, public := nic1.Resources().Certificate()
-	if domain == "" || private == "" || public == "" {
-		domain, private, public = sec.CreateCertBundle()
+	domain, private, _ := nic1.Resources().Certificate()
+	if domain == "" || private == "" {
+		d, p, _ := sec.CreateCertBundle()
+		domainBytes, _ := base64.StdEncoding.DecodeString(d)
+		privateBytes, _ := base64.StdEncoding.DecodeString(p)
+		domain = string(domainBytes)
+		private = string(privateBytes)
 	}
 
 	serverConfig := &server.RestServerConfig{
