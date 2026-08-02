@@ -35,6 +35,17 @@ type ServiceConfig struct {
 	PrimaryKey   string
 	Callback     ifs.IServiceCallback
 	ServiceGroup string
+	// Voter, if true, marks this service as a voting participant. Default false,
+	// preserving today's implicit behavior (SetVoter was never called).
+	Voter bool
+	// NonUniqueKeys, if non-empty, is passed to SetNonUniqueKeys. Default nil
+	// (SetNonUniqueKeys is skipped when empty, matching today's behavior).
+	NonUniqueKeys []string
+	// Replication, if nil, defaults to true (today's hardcoded behavior).
+	// Set to a pointer to false to opt out of replication.
+	Replication *bool
+	// ReplicationCount, if 0, defaults to 3 (today's hardcoded behavior).
+	ReplicationCount int
 }
 
 // ActivateService sets up and activates a service with the standard boilerplate.
@@ -56,8 +67,20 @@ func ActivateService(cfg ServiceConfig, serviceItem proto.Message, serviceItemLi
 	sla.SetPrimaryKeys(cfg.PrimaryKey)
 	sla.SetArgs(p, true)
 	sla.SetTransactional(true)
-	sla.SetReplication(true)
-	sla.SetReplicationCount(3)
+	sla.SetVoter(cfg.Voter)
+	if len(cfg.NonUniqueKeys) > 0 {
+		sla.SetNonUniqueKeys(cfg.NonUniqueKeys...)
+	}
+	replication := true
+	if cfg.Replication != nil {
+		replication = *cfg.Replication
+	}
+	sla.SetReplication(replication)
+	replicationCount := cfg.ReplicationCount
+	if replicationCount == 0 {
+		replicationCount = 3
+	}
+	sla.SetReplicationCount(replicationCount)
 
 	ws := web.New(cfg.ServiceName, cfg.ServiceArea, 0)
 	ws.AddEndpoint(serviceItem, ifs.POST, &l8web.L8Empty{})
