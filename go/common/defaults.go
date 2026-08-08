@@ -59,7 +59,6 @@ func CreateResources(alias string, logVnet bool) ifs.IResources {
 	}
 
 	res.SysConfig().LocalAlias = alias
-	res.SysConfig().KeepAliveIntervalSeconds = 30
 
 	if logVnet {
 		res.SysConfig().VnetPort = res.SysConfig().LogConfig.VnetPort
@@ -181,7 +180,6 @@ func CreateVnic(alias string, logs bool, registerTypes func(r ifs.IResources)) i
 		registerTypes(res)
 	}
 	nic := vnic.NewVirtualNetworkInterface(res, nil)
-	nic.Resources().SysConfig().KeepAliveIntervalSeconds = 60
 	nic.Start()
 	nic.WaitForConnection()
 	return nic
