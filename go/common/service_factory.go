@@ -28,61 +28,53 @@ import (
 	"reflect"
 )
 
-// ServiceConfig holds the configuration for activating a service.
-type ServiceConfig struct {
-	ServiceName  string
-	ServiceArea  byte
-	PrimaryKey   string
-	Callback     ifs.IServiceCallback
-	ServiceGroup string
-	// Voter, if true, marks this service as a voting participant. Default false,
-	// preserving today's implicit behavior (SetVoter was never called).
-	Voter bool
-	// NonUniqueKeys, if non-empty, is passed to SetNonUniqueKeys. Default nil
-	// (SetNonUniqueKeys is skipped when empty, matching today's behavior).
-	NonUniqueKeys []string
-	// Replication, if nil, defaults to true (today's hardcoded behavior).
-	// Set to a pointer to false to opt out of replication.
-	Replication *bool
-	// ReplicationCount, if 0, defaults to 3 (today's hardcoded behavior).
-	ReplicationCount int
+// NewOrmSLA builds the SLA for an ORM-backed service with the house defaults:
+// transactional, replicated 3 ways, service group "L8SG", not a voter.
+//
+// The SLA *is* the configuration. Anything the service needs beyond the
+// defaults is set on it directly by the caller — SetVoter, SetUniqueKeys,
+// SetNonUniqueKeys, SetReplication, ... — so a setter added to the SLA later
+// is immediately usable everywhere, instead of silently unavailable until
+// this package grows a matching field.
+func NewOrmSLA(serviceName string, serviceArea byte, primaryKey string, callback ifs.IServiceCallback,
+	serviceItem proto.Message, serviceItemList proto.Message) *ifs.ServiceLevelAgreement {
+
+	sla := ifs.NewServiceLevelAgreement(&persist.OrmService{}, serviceName, serviceArea, true, callback)
+	sla.SetServiceItem(serviceItem)
+	sla.SetServiceItemList(serviceItemList)
+	sla.SetPrimaryKeys(primaryKey)
+	sla.SetTransactional(true)
+	sla.SetReplication(true)
+	sla.SetReplicationCount(3)
+	sla.SetServiceGroup("L8SG")
+	return sla
 }
 
-// ActivateService sets up and activates a service with the standard boilerplate.
-// serviceItem and serviceItemList must be proto.Message instances (e.g., &MyType{}, &MyTypeList{}).
-func ActivateService(cfg ServiceConfig, serviceItem proto.Message, serviceItemList proto.Message, creds, dbname string, vnic ifs.IVNic) {
-	if cfg.PrimaryKey == "" {
-		panic(fmt.Sprintf("service %s (area %d): PrimaryKey is required", cfg.ServiceName, cfg.ServiceArea))
+// ActivateService does what the SLA cannot describe on its own: it opens the
+// service's database, attaches the Postgres plugin, registers the standard
+// REST surface and activates the service.
+func ActivateService(sla *ifs.ServiceLevelAgreement, creds, dbname string, vnic ifs.IVNic) {
+	if len(sla.PrimaryKeys()) == 0 {
+		panic(fmt.Sprintf("service %s (area %d): PrimaryKey is required", sla.ServiceName(), sla.ServiceArea()))
 	}
 	_, user, pass, port, err := vnic.Resources().Security().Credential(creds, dbname, vnic.Resources())
 	if err != nil {
 		panic("Did not find credentials " + creds + " or db " + dbname + ":" + err.Error())
 	}
 	db := OpenDBConection(dbname, user, pass, port)
-	p := postgres.NewPostgres(db, vnic.Resources())
+	sla.SetArgs(postgres.NewPostgres(db, vnic.Resources()), true)
 
-	sla := ifs.NewServiceLevelAgreement(&persist.OrmService{}, cfg.ServiceName, cfg.ServiceArea, true, cfg.Callback)
-	sla.SetServiceItem(serviceItem)
-	sla.SetServiceItemList(serviceItemList)
-	sla.SetPrimaryKeys(cfg.PrimaryKey)
-	sla.SetArgs(p, true)
-	sla.SetTransactional(true)
-	sla.SetVoter(cfg.Voter)
-	if len(cfg.NonUniqueKeys) > 0 {
-		sla.SetNonUniqueKeys(cfg.NonUniqueKeys...)
+	// The SLA holds these as interface{}; the REST surface needs the protos.
+	serviceItem, ok := sla.ServiceItem().(proto.Message)
+	if !ok {
+		panic(fmt.Sprintf("service %s (area %d): service item is not a proto.Message", sla.ServiceName(), sla.ServiceArea()))
 	}
-	replication := true
-	if cfg.Replication != nil {
-		replication = *cfg.Replication
+	serviceItemList, ok := sla.ServiceItemList().(proto.Message)
+	if !ok {
+		panic(fmt.Sprintf("service %s (area %d): service item list is not a proto.Message", sla.ServiceName(), sla.ServiceArea()))
 	}
-	sla.SetReplication(replication)
-	replicationCount := cfg.ReplicationCount
-	if replicationCount == 0 {
-		replicationCount = 3
-	}
-	sla.SetReplicationCount(replicationCount)
 
-	ws := web.New(cfg.ServiceName, cfg.ServiceArea, 0)
+	ws := web.New(sla.ServiceName(), sla.ServiceArea(), 0)
 	ws.AddEndpoint(serviceItem, ifs.POST, &l8web.L8Empty{})
 	ws.AddEndpoint(serviceItemList, ifs.POST, &l8web.L8Empty{})
 	ws.AddEndpoint(serviceItem, ifs.PUT, &l8web.L8Empty{})
@@ -91,11 +83,6 @@ func ActivateService(cfg ServiceConfig, serviceItem proto.Message, serviceItemLi
 	ws.AddEndpoint(&l8api.L8Query{}, ifs.GET, serviceItemList)
 	sla.SetWebService(ws)
 
-	serviceGroup := cfg.ServiceGroup
-	if serviceGroup == "" {
-		serviceGroup = "L8SG"
-	}
-	sla.SetServiceGroup(serviceGroup)
 	vnic.Resources().Services().Activate(sla, vnic)
 }
 
