@@ -21,6 +21,7 @@ import (
 	l8api "github.com/saichler/l8types/go/types/l8api"
 	"github.com/saichler/l8types/go/types/l8reflect"
 	"reflect"
+	"sync"
 )
 
 // VB (Validation Builder) chains validators for a ServiceCallback.
@@ -46,27 +47,49 @@ func NewValidation(typeInstance interface{}, vnic ifs.IVNic) *VB {
 		return reflect.TypeOf(v) == instanceType
 	}
 
-	// Derive setID from the introspector's primary key decorator
-	var setID SetIDFunc
-	introspector := vnic.Resources().Introspector()
-	if introspector != nil {
-		node, ok := introspector.NodeByValue(typeInstance)
-		if ok {
-			fields, err := introspector.Decorators().Fields(node, l8reflect.L8DecoratorType_Primary)
-			if err == nil && len(fields) > 0 {
-				pkFieldName := fields[0]
-				setID = func(v interface{}) {
-					rv := reflect.ValueOf(v).Elem()
-					f := rv.FieldByName(pkFieldName)
-					if f.IsValid() && f.Kind() == reflect.String && f.String() == "" {
-						f.SetString(ifs.NewUuid())
+	// Resolve the primary-key field LAZILY, on first use, not here.
+	//
+	// Every service's Activate() builds its callback inline in the argument
+	// list of NewOrmSLA(ServiceName, ServiceArea, "<Pk>Id", newXServiceCallback(vnic), ...).
+	// Go evaluates that argument BEFORE NewOrmSLA runs, so this constructor
+	// executes before ActivateService registers the type and its primary-key
+	// decorator with the introspector. Resolving eagerly therefore found no
+	// decorator and fell through to the no-op below, so POST never generated an
+	// id and the service's own Require("<Pk>Id") validator rejected every
+	// create with "<Pk>Id is required" -- for every service that did not also
+	// call GenerateID explicitly.
+	//
+	// Resolving on first call instead looks the decorator up once the service
+	// is fully activated, which is always before any request arrives. The
+	// lookup retries while unresolved rather than caching a failure, so a type
+	// registered even later still heals itself.
+	var (
+		pkMu        sync.Mutex
+		pkFieldName string
+	)
+	setID := func(v interface{}) {
+		pkMu.Lock()
+		if pkFieldName == "" {
+			if introspector := vnic.Resources().Introspector(); introspector != nil {
+				if node, ok := introspector.NodeByValue(typeInstance); ok {
+					fields, err := introspector.Decorators().Fields(node, l8reflect.L8DecoratorType_Primary)
+					if err == nil && len(fields) > 0 {
+						pkFieldName = fields[0]
 					}
 				}
 			}
 		}
-	}
-	if setID == nil {
-		setID = func(v interface{}) {} // no-op if introspector unavailable
+		name := pkFieldName
+		pkMu.Unlock()
+
+		if name == "" {
+			return // introspector unavailable or type has no primary key decorator
+		}
+		rv := reflect.ValueOf(v).Elem()
+		f := rv.FieldByName(name)
+		if f.IsValid() && f.Kind() == reflect.String && f.String() == "" {
+			f.SetString(ifs.NewUuid())
+		}
 	}
 
 	return &VB{typeName: typeName, typeCheck: typeCheck, setID: setID}
