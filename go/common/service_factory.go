@@ -57,6 +57,28 @@ func ActivateService(sla *ifs.ServiceLevelAgreement, creds, dbname string, vnic 
 	if len(sla.PrimaryKeys()) == 0 {
 		panic(fmt.Sprintf("service %s (area %d): PrimaryKey is required", sla.ServiceName(), sla.ServiceArea()))
 	}
+
+	// Register the primary key with the INTROSPECTOR as well as the SLA.
+	//
+	// The ORM reads the primary key off the SLA, so persistence worked without
+	// this. But everything that resolves a type's identity through the
+	// introspector needs a Primary decorator, and on a backend node nothing
+	// else registers one -- RegisterType/AddPrimaryKeyDecorator is only called
+	// on the UI node. The visible consequence was that NewValidation could not
+	// derive its auto-id setter, so POST never generated an id and every
+	// service whose callback does Require("<Pk>Id") rejected every create with
+	// "<Pk>Id is required". Only services that also called GenerateID
+	// explicitly could be created at all; the mock generator never noticed
+	// because it supplies its own ids.
+	if intro := vnic.Resources().Introspector(); intro != nil {
+		if item, ok := sla.ServiceItem().(proto.Message); ok {
+			if err := intro.Decorators().AddPrimaryKeyDecorator(item, sla.PrimaryKeys()...); err != nil {
+				panic(fmt.Sprintf("service %s (area %d): could not register primary key %v: %s",
+					sla.ServiceName(), sla.ServiceArea(), sla.PrimaryKeys(), err.Error()))
+			}
+		}
+	}
+
 	_, user, pass, port, err := vnic.Resources().Security().Credential(creds, dbname, vnic.Resources())
 	if err != nil {
 		panic("Did not find credentials " + creds + " or db " + dbname + ":" + err.Error())
